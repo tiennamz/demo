@@ -1,0 +1,120 @@
+
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Game Đối Kháng - Một file</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0;font-family:Inter,system-ui,Segoe UI,Arial}
+    body{background:#0b1220;color:#e6eef6;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+    #container{width:980px;max-width:1000px;position:relative}
+    #hud{display:flex;justify-content:space-between;margin-bottom:8px}
+    .bar{width:48%;height:18px;background:#2b3138;border-radius:6px;overflow:hidden}
+    .fill{height:100%;background:linear-gradient(90deg,#29b6f6,#7bffb2);width:100%}
+    #arena{background:linear-gradient(#1b2430,#0f161d);display:block;border-radius:8px;box-shadow:0 6px 20px rgba(0,0,0,0.6)}
+    #info{margin-top:8px;text-align:center;font-size:13px;color:#9fb0c7}
+    #overlay{position:absolute;left:50%;top:48%;transform:translate(-50%,-50%);padding:18px 28px;background:rgba(0,0,0,0.7);border-radius:8px;border:2px solid #fff;color:#fff;font-size:22px}
+    .hidden{display:none}
+    @media(max-width:1000px){#container{width:100%;padding:0 14px}#arena{width:100%}}
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="hud">
+      <div class="bar" id="p1-bar"><div class="fill" id="p1-health" style="width:100%"></div></div>
+      <div class="bar" id="p2-bar"><div class="fill" id="p2-health" style="width:100%"></div></div>
+    </div>
+    <canvas id="arena" width="960" height="480"></canvas>
+    <div id="info">P1: A/D di chuyển, W nhảy, F tấn công — P2: ←/→ di chuyển, ↑ nhảy, L tấn công — Nhấn R để chơi lại</div>
+    <div id="overlay" class="hidden"></div>
+  </div>
+  <script>
+    const canvas = document.getElementById('arena');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const p1HealthBar = document.getElementById('p1-health');
+    const p2HealthBar = document.getElementById('p2-health');
+    const GRAVITY = 0.9;
+    class Player {
+      constructor(x, y, color, controls) {
+        this.x = x; this.y = y; this.w = 60; this.h = 100;
+        this.vx = 0; this.vy = 0; this.speed = 6; this.jumpPower = -18;
+        this.onGround = false; this.color = color; this.facing = 1;
+        this.health = 100; this.attackCooldown = 0; this.controls = controls; this.isAttacking = false;
+        this.hitCooldown = 0;
+      }
+      rect() { return {x:this.x,y:this.y,w:this.w,h:this.h}; }
+      attackBox() {
+        const reach = 30;
+        if (!this.isAttacking) return null;
+        if (this.facing>0) return {x:this.x+this.w, y:this.y+20, w:reach, h:this.h-40};
+        return {x:this.x-reach, y:this.y+20, w:reach, h:this.h-40};
+      }
+    }
+    const p1 = new Player(120, 300, '#ff6b6b', {left:'a',right:'d',jump:'w',attack:'f'});
+    const p2 = new Player(760, 300, '#67e8f9', {left:'ArrowLeft',right:'ArrowRight',jump:'ArrowUp',attack:'l'});
+    const keys = {};
+    window.addEventListener('keydown', e => { keys[e.key] = true; });
+    window.addEventListener('keyup', e => { keys[e.key] = false; });
+    function rectsCollide(a,b){return a.x<b.x+b.w && a.x+a.w>b.x && a.y<b.y+b.h && a.y+a.h>b.y}
+    function updatePlayer(player, opponent){
+      if (keys[player.controls.left]){ player.vx = -player.speed; player.facing = -1; }
+      else if (keys[player.controls.right]){ player.vx = player.speed; player.facing = 1; }
+      else player.vx = 0;
+      if (keys[player.controls.jump] && player.onGround){ player.vy = player.jumpPower; player.onGround = false; }
+      if (player.attackCooldown<=0 && keys[player.controls.attack]){
+        player.isAttacking = true; player.attackCooldown = 40;
+        setTimeout(()=>{player.isAttacking=false},120);
+      }
+      if (player.attackCooldown>0) player.attackCooldown--;
+      player.vy += GRAVITY;
+      player.x += player.vx;
+      player.y += player.vy;
+      const floor = canvas.height - 60;
+      if (player.y + player.h >= floor){ player.y = floor - player.h; player.vy = 0; player.onGround = true; }
+      if (player.x < 0) player.x = 0;
+      if (player.x + player.w > canvas.width) player.x = canvas.width - player.w;
+      const atk = player.attackBox();
+      if (atk && rectsCollide(atk, opponent.rect())){
+        if (!opponent.hitCooldown){ opponent.health = Math.max(0, opponent.health - 8); opponent.vx = 8 * player.facing; opponent.vy = -6; opponent.hitCooldown = 18; }
+      }
+      if (opponent.hitCooldown>0) opponent.hitCooldown--;
+    }
+    function drawPlayer(p){
+      ctx.fillStyle = 'rgba(0,0,0,0.25)';
+      ctx.fillRect(p.x+6, canvas.height-60-6, p.w, 8);
+      ctx.fillStyle = p.color; ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = '#fff'; ctx.fillRect(p.x + 10, p.y + 10, p.w - 20, 12);
+      const atk = p.attackBox();
+      if (atk){ ctx.fillStyle = 'rgba(255,255,255,0.15)'; ctx.fillRect(atk.x, atk.y, atk.w, atk.h); }
+    }
+    function updateHUD(){ p1HealthBar.style.width = p1.health + '%'; p2HealthBar.style.width = p2.health + '%'; }
+    function checkWin(){
+      if (p1.health<=0 || p2.health<=0){
+        const winner = p1.health>p2.health ? 'Người chơi 1 thắng!' : (p2.health>p1.health ? 'Người chơi 2 thắng!' : 'Hòa!');
+        overlay.textContent = winner + ' (Nhấn R để chơi lại)'; overlay.classList.remove('hidden'); running = false;
+      }
+    }
+    let running = true;
+    function loop(){
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      ctx.fillStyle = '#17202b'; ctx.fillRect(0, canvas.height-60, canvas.width, 60);
+      updatePlayer(p1, p2);
+      updatePlayer(p2, p1);
+      drawPlayer(p1);
+      drawPlayer(p2);
+      updateHUD();
+      checkWin();
+      if (running) requestAnimationFrame(loop);
+    }
+    window.addEventListener('keydown', e=>{ if (e.key==='r' || e.key==='R'){ reset(); }});
+    function reset(){
+      p1.x = 120; p1.y = 300; p1.health = 100; p1.vx = p1.vy = 0; p1.hitCooldown = 0; p1.isAttacking=false;
+      p2.x = 760; p2.y = 300; p2.health = 100; p2.vx = p2.vy = 0; p2.hitCooldown = 0; p2.isAttacking=false;
+      overlay.classList.add('hidden'); running = true; requestAnimationFrame(loop);
+    }
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
